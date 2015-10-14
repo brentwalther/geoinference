@@ -68,7 +68,7 @@ public class CreateDataset {
         if (datasetDir.exists() && datasetDir.isDirectory()) {
             File usersFile = new File(datasetDir, "users.json.gz");
             File postsFile = new File(datasetDir, "posts.json.gz");
-            if (canOverwrite && (postsFile.exists() || usersFile.exists())) {
+            if (!canOverwrite && (postsFile.exists() || usersFile.exists())) {
                 System.out.printf("Found prior dataset in %s, but cannot " +
                                   "overwrite it.  Use -f to force overwriting "+
                                   "prior data%n", datasetDir);
@@ -160,9 +160,13 @@ public class CreateDataset {
                     try {
                         BufferedReader br = openGz(f);
                         for (String line = null; (line = br.readLine()) != null; ) {
-                            JSONObject post = new JSONObject(line);
-                            if (!post.has("user"))
+                            JSONObject post = null;
+                            try {
+                              post = new JSONObject(line);
+                            } catch (JSONException e) { /* Just catch. This line was invalid */ }
+                            if (post == null || !post.has("user")) {
                                 continue;
+                            }
                             JSONObject user = post.getJSONObject("user");
                             long uid = user.getLong("id");
                             File tmpFile = null;
@@ -260,18 +264,21 @@ public class CreateDataset {
             }
             
             List<JSONObject> sortedPosts = new ArrayList<JSONObject>(1_000_000);
-            BufferedReader br = openGz(tmpFile);
-            for (String line = null; (line = br.readLine()) != null; ) {
-                try {
-                    sortedPosts.add(new JSONObject(line));
-                } catch (JSONException je) {
-                    je.printStackTrace();
-                }
+            BufferedReader br = null;
+            try {
+              br = openGz(tmpFile);
+              for (String line = null; (line = br.readLine()) != null; ) {
+                  try {
+                      sortedPosts.add(new JSONObject(line));
+                  } catch (JSONException je) {
+                      je.printStackTrace();
+                  }
+              }
+            } finally {
+              if (br != null) { br.close(); }
+              // Clean up our mess, since this file is no longer needed
+              tmpFile.delete();
             }
-            br.close();
-
-            // Clean up our mess, since this file is no longer needed
-            tmpFile.delete();
 
             Collections.sort(sortedPosts, new Comparator<JSONObject>() {
                     public int compare(JSONObject jo1, JSONObject jo2) {
